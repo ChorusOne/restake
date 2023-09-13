@@ -20,7 +20,9 @@ class Health {
       // This is necessary as the default provider - hc-ping.com - has a built in ping mechanism
       // whereas providing self-hosted addresses do NOT. 
       // https://healthchecks.selfhosted.com/ping/{uuid} rather than https://hc-ping.com/{uuid}
-      this.address = this.address + "/ping"
+      if (!this.address.includes("slack")) {
+        this.address = this.address + "/ping"
+      }
     }
   }
 
@@ -80,10 +82,43 @@ class Health {
     if (!this.uuid) return
     if (this.dryRun) return timeStamp('DRYRUN: Skipping health check ping')
 
+    let target_url = ""
+    let dat2 = ""
+    if (this.address.includes("hc-ping") || this.address.includes("/ping")) {
+      target_url = _.compact([this.address, this.uuid, action]).join('/')
+      dat2 = logs.join("\n")
+    } else {
+      let msg = ""
+
+      if (typeof action === 'undefined') {
+        msg = "restake: " + this.name + "\n" + "OK\n" + logs.join("\n")
+      } else {
+        msg = "restake: " + this.name + "\n" + action + "\n" + logs.join("\n")
+      }
+
+      let dat = {
+        text: msg
+      }
+
+      target_url = _.compact([this.address]).join('/')
+      dat2 = JSON.stringify(dat)
+
+      // if tx failed, alert #cosmos-alerts in addition to #cosmos-restake-logs
+      if (action == "fail") {
+        axios.request({
+          method: 'POST',
+          url: this.uuid,
+          data: dat2
+        }).catch(error => {
+          timeStamp('Health extra ping failed', error.message)
+        })
+      }
+    }
+
     return axios.request({
       method: 'POST',
-      url: _.compact([this.address, this.uuid, action]).join('/'),
-      data: logs.join("\n")
+      url: target_url,
+      data: dat2
     }).catch(error => {
       timeStamp('Health ping failed', error.message)
     })
